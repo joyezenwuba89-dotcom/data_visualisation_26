@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Numerical Integration: Trapezoidal and Simpson</title>
+<style>
+  :root {
+    --bg: #f3f6f8;
+    --panel: #ffffff;
+    --ink: #14232e;
+    --muted: #5a6b78;
+    --line: #d5dee5;
+    --trap: #1f6f8b;
+    --simp: #c2410c;
+    --curve: #14232e;
+    --ok: #1d7a46;
+    --bad: #b42318;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  header { padding: 28px 24px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 1.75rem; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 70ch; }
+  main {
+    max-width: 1100px; margin: 0 auto; padding: 16px 24px 40px;
+    display: grid; gap: 20px; grid-template-columns: 340px 1fr;
+  }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px;
+  }
+  .panel h2 { margin: 0 0 12px; font-size: 1.05rem; }
+  label { display: block; font-weight: 600; font-size: 0.9rem; margin: 12px 0 4px; }
+  input, select {
+    width: 100%; padding: 8px 10px; font: inherit; color: inherit;
+    border: 1px solid var(--line); border-radius: 6px; background: #fff;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 3px solid #7cc4dc; outline-offset: 1px;
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hint { color: var(--muted); font-size: 0.82rem; margin-top: 4px; }
+  button {
+    margin-top: 18px; width: 100%; padding: 10px 14px; font: inherit; font-weight: 600;
+    color: #fff; background: var(--ink); border: 0; border-radius: 6px; cursor: pointer;
+  }
+  button:hover { background: #20384a; }
+  .formula {
+    font-family: Consolas, "Courier New", monospace; font-size: 0.92rem;
+    background: var(--bg); border-radius: 6px; padding: 8px 10px; margin-top: 4px;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .error { color: var(--bad); font-weight: 600; margin-top: 12px; display: none; }
+  .note { color: var(--muted); font-size: 0.85rem; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.82rem; }
+  td.num { font-family: Consolas, "Courier New", monospace; text-align: right; }
+  th.num { text-align: right; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; }
+  .results { display: grid; gap: 20px; min-width: 0; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+  .tabs label {
+    margin: 0; display: inline-flex; align-items: center; gap: 6px; font-weight: 500;
+    padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
+  }
+  .tabs input { width: auto; }
+  canvas { width: 100%; height: 340px; display: block; border-radius: 6px; background: #fff; }
+  .exact { margin-bottom: 10px; color: var(--muted); }
+  .exact strong { color: var(--ink); font-family: Consolas, "Courier New", monospace; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Numerical integration</h1>
+  <p>Approximate a definite integral with the trapezoidal rule and Simpson's rule, either with a fixed
+     number of subintervals or by letting the program choose the step size to reach a tolerance.</p>
+</header>
+
+<main>
+  <section class="panel" aria-labelledby="inputs-title">
+    <h2 id="inputs-title">Inputs</h2>
+
+    <label for="fn">Function f(x)</label>
+    <select id="fn"></select>
+
+    <div class="row">
+      <div>
+        <label for="a">Lower limit a</label>
+        <input id="a" type="number" step="any" value="0">
+      </div>
+      <div>
+        <label for="b">Upper limit b</label>
+        <input id="b" type="number" step="any" value="3.14159265358979">
+      </div>
+    </div>
+
+    <label for="n">Number of subintervals n</label>
+    <input id="n" type="number" min="1" step="1" value="8">
+    <div class="hint">Simpson's rule needs an even n. An odd value is raised by one.</div>
+
+    <label for="tol">Tolerance for automatic step size</label>
+    <input id="tol" type="number" min="0" step="any" value="1e-6">
+    <div class="hint">Both methods halve h until the estimated error is below this value.</div>
+
+    <button id="run" type="button">Calculate</button>
+    <div class="error" id="error" role="alert"></div>
+
+    <h2 style="margin-top:22px">Formulas</h2>
+    <div class="formula">h = (b - a) / n</div>
+    <div class="formula" style="margin-top:6px">T = h/2 [f(x0) + 2 Σ f(xi) + f(xn)]</div>
+    <div class="formula" style="margin-top:6px">S = h/3 [f(x0) + 4 Σ f(odd) + 2 Σ f(even) + f(xn)]</div>
+  </section>
+
+  <div class="results">
+    <section class="panel" aria-labelledby="fixed-title">
+      <h2 id="fixed-title">Fixed number of subintervals</h2>
+      <div class="exact" id="exact"></div>
+      <table>
+        <thead>
+          <tr><th>Method</th><th class="num">Result</th><th class="num">Absolute error</th><th class="num">n</th><th class="num">h</th></tr>
+        </thead>
+        <tbody id="fixed-body"></tbody>
+      </table>
+    </section>
+
+    <section class="panel" aria-labelledby="auto-title">
+      <h2 id="auto-title">Automatic step size</h2>
+      <table>
+        <thead>
+          <tr><th>Method</th><th class="num">Result</th><th class="num">Absolute error</th><th class="num">Estimated error</th><th class="num">n</th><th class="num">h</th></tr>
+        </thead>
+        <tbody id="auto-body"></tbody>
+      </table>
+      <div class="note" id="auto-note"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="plot-title">
+      <h2 id="plot-title">Picture of the fixed-n approximation</h2>
+      <div class="tabs" role="radiogroup" aria-label="Method to draw">
+        <label><input type="radio" name="view" value="trapezoid" checked> Trapezoidal</label>
+        <label><input type="radio" name="view" value="simpson"> Simpson</label>
+      </div>
+      <canvas id="plot" aria-label="Plot of the function with the approximating shapes"></canvas>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+/* ---------- Core numerical methods ---------- */
+
+class Integrator {
+  /** Trapezoidal rule with n subintervals. */
+  static trapezoid(f, a, b, n) {
+    Integrator.#check(f, a, b, n);
+    const h = (b - a) / n;
+    let sum = 0;
+    for (let i = 1; i < n; i++) sum += f(a + i * h);
+    return (h / 2) * (f(a) + 2 * sum + f(b));
+  }
+
+  /** Simpson's rule with n subintervals (n must be even). */
+  static simpson(f, a, b, n) {
+    Integrator.#check(f, a, b, n);
+    if (n % 2 !== 0) throw new Error("Simpson's rule needs an even number of subintervals.");
+    const h = (b - a) / n;
+    let odd = 0, even = 0;
+    for (let i = 1; i <= n / 2; i++) odd += f(a + (2 * i - 1) * h);
+    for (let i = 1; i <= n / 2 - 1; i++) even += f(a + 2 * i * h);
+    return (h / 3) * (f(a) + 4 * odd + 2 * even + f(b));
+  }
+
+  /**
+   * Automatic step size for the trapezoidal rule.
+   * Doubles n until |T(2n) - T(n)| / 3 <= tol (Richardson estimate, error ~ h^2).
+   */
+  static autoTrapezoid(f, a, b, tol, maxN = 1 << 22) {
+    return Integrator.#auto((n) => Integrator.trapezoid(f, a, b, n), a, b, tol, 1, 3, maxN);
+  }
+
+  /**
+   * Automatic step size for Simpson's rule.
+   * Doubles n until |S(2n) - S(n)| / 15 <= tol (Richardson estimate, error ~ h^4).
+   */
+  static autoSimpson(f, a, b, tol, maxN = 1 << 22) {
+    return Integrator.#auto((n) => Integrator.simpson(f, a, b, n), a, b, tol, 2, 15, maxN);
+  }
+
+  static #auto(rule, a, b, tol, startN, divisor, maxN) {
+    let n = startN;
+    let prev = rule(n);
+    let iterations = 1;
+    while (n < maxN) {
+      n *= 2;
+      const cur = rule(n);
+      iterations++;
+      const estimate = Math.abs(cur - prev) / divisor;
+      if (estimate <= tol) {
+        return { value: cur, n, h: (b - a) / n, estimate, iterations, converged: true };
+      }
+      prev = cur;
+    }
+    return { value: prev, n, h: (b - a) / n, estimate: NaN, iterations, converged: false };
+  }
+
+  static #check(f, a, b, n) {
+    if (typeof f !== "function") throw new Error("f must be a function.");
+    if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error("The limits must be finite numbers.");
+    if (!Number.isInteger(n) || n < 1) throw new Error("n must be a positive integer.");
+  }
+}
+
+/* ---------- Predefined functions ---------- */
+
+const FUNCTIONS = [
+  { id: "sin",   label: "sin(x)",          f: Math.sin,                     F: (x) => -Math.cos(x) },
+  { id: "cos",   label: "cos(x)",          f: Math.cos,                     F: Math.sin },
+  { id: "sq",    label: "x²",              f: (x) => x * x,                 F: (x) => x ** 3 / 3 },
+  { id: "cube",  label: "x³ − 2x + 1",     f: (x) => x ** 3 - 2 * x + 1,    F: (x) => x ** 4 / 4 - x * x + x },
+  { id: "exp",   label: "eˣ",              f: Math.exp,                     F: Math.exp },
+  { id: "atan",  label: "1 / (1 + x²)",    f: (x) => 1 / (1 + x * x),       F: Math.atan },
+  { id: "sqrt",  label: "√x (x ≥ 0)",      f: Math.sqrt,                    F: (x) => (2 / 3) * x ** 1.5, domain: (x) => x >= 0 },
+  { id: "ln",    label: "ln(x) (x > 0)",   f: Math.log,                     F: (x) => x * Math.log(x) - x, domain: (x) => x > 0 },
+  { id: "inv",   label: "1 / x (x > 0)",   f: (x) => 1 / x,                 F: Math.log, domain: (x) => x > 0 },
+  { id: "gauss", label: "e^(−x²)",         f: (x) => Math.exp(-x * x),      F: null },
+  { id: "sinc",  label: "sin(x) / x",      f: (x) => (x === 0 ? 1 : Math.sin(x) / x), F: null },
+];
+
+/** Reference value: exact antiderivative if known, else a very fine Simpson sum. */
+function referenceValue(fn, a, b) {
+  if (fn.F) return fn.F(b) - fn.F(a);
+  return Integrator.simpson(fn.f, a, b, 1 << 18);
+}
+
+/* ---------- Plot ---------- */
+
+class Plot {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+  }
+
+  draw(fn, a, b, n, method, colors) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = this.canvas.clientWidth, H = this.canvas.clientHeight;
+    this.canvas.width = W * dpr;
+    this.canvas.height = H * dpr;
+    const ctx = this.ctx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const pad = { l: 46, r: 16, t: 14, b: 28 };
+    const samples = 400;
+    let lo = 0, hi = 0;
+    for (let i = 0; i <= samples; i++) {
+      const y = fn.f(a + ((b - a) * i) / samples);
+      if (Number.isFinite(y)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    }
+    if (hi === lo) { hi += 1; lo -= 1; }
+    const m = (hi - lo) * 0.08;
+    lo -= m; hi += m;
+
+    const X = (x) => pad.l + ((x - a) / (b - a)) * (W - pad.l - pad.r);
+    const Y = (y) => H - pad.b - ((y - lo) / (hi - lo)) * (H - pad.t - pad.b);
+
+    // axes and ticks
+    ctx.strokeStyle = "#c5d0d8"; ctx.fillStyle = "#5a6b78"; ctx.lineWidth = 1;
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (let i = 0; i <= 4; i++) {
+      const v = lo + ((hi - lo) * i) / 4;
+      ctx.beginPath(); ctx.moveTo(pad.l, Y(v)); ctx.lineTo(W - pad.r, Y(v)); ctx.stroke();
+      ctx.fillText(v.toPrecision(2), pad.l - 6, Y(v));
+    }
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let i = 0; i <= 4; i++) {
+      const v = a + ((b - a) * i) / 4;
+      ctx.fillText(+v.toPrecision(3), X(v), H - pad.b + 6);
+    }
+    ctx.strokeStyle = "#14232e";
+    ctx.beginPath(); ctx.moveTo(pad.l, Y(0)); ctx.lineTo(W - pad.r, Y(0)); ctx.stroke();
+
+    // approximating shapes
+    const color = method === "simpson" ? colors.simp : colors.trap;
+    const useN = method === "simpson" && n % 2 ? n + 1 : n;
+    const h = (b - a) / useN;
+    const showEdges = useN <= 120;
+    ctx.fillStyle = color + "33";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+
+    if (method === "trapezoid") {
+      for (let i = 0; i < useN; i++) {
+        const x0 = a + i * h, x1 = x0 + h;
+        ctx.beginPath();
+        ctx.moveTo(X(x0), Y(0)); ctx.lineTo(X(x0), Y(fn.f(x0)));
+        ctx.lineTo(X(x1), Y(fn.f(x1))); ctx.lineTo(X(x1), Y(0)); ctx.closePath();
+        ctx.fill();
+        if (showEdges) ctx.stroke();
+      }
+    } else {
+      for (let i = 0; i < useN; i += 2) {
+        const x0 = a + i * h, x1 = x0 + h, x2 = x0 + 2 * h;
+        const y0 = fn.f(x0), y1 = fn.f(x1), y2 = fn.f(x2);
+        ctx.beginPath();
+        ctx.moveTo(X(x0), Y(0)); ctx.lineTo(X(x0), Y(y0));
+        const steps = 24;
+        for (let s = 1; s <= steps; s++) {
+          const x = x0 + (2 * h * s) / steps;
+          ctx.lineTo(X(x), Y(Plot.lagrange(x, x0, x1, x2, y0, y1, y2)));
+        }
+        ctx.lineTo(X(x2), Y(0)); ctx.closePath();
+        ctx.fill();
+        if (showEdges) ctx.stroke();
+      }
+    }
+
+    // the function itself
+    ctx.strokeStyle = colors.curve; ctx.lineWidth = 2;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i <= samples; i++) {
+      const x = a + ((b - a) * i) / samples, y = fn.f(x);
+      if (!Number.isFinite(y)) { started = false; continue; }
+      if (!started) { ctx.moveTo(X(x), Y(y)); started = true; } else ctx.lineTo(X(x), Y(y));
+    }
+    ctx.stroke();
+  }
+
+  static lagrange(x, x0, x1, x2, y0, y1, y2) {
+    return y0 * ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2))
+         + y1 * ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2))
+         + y2 * ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1));
+  }
+}
+
+/* ---------- Page controller ---------- */
+
+class App {
+  constructor() {
+    this.$ = (id) => document.getElementById(id);
+    this.colors = { trap: "#1f6f8b", simp: "#c2410c", curve: "#14232e" };
+    this.plot = new Plot(this.$("plot"));
+
+    const select = this.$("fn");
+    FUNCTIONS.forEach((fn, i) => select.add(new Option(fn.label, i)));
+
+    this.$("run").addEventListener("click", () => this.run());
+    document.querySelectorAll("input, select").forEach((el) =>
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") this.run(); }));
+    select.addEventListener("change", () => this.run());
+    document.querySelectorAll('input[name="view"]').forEach((el) =>
+      el.addEventListener("change", () => this.run()));
+    window.addEventListener("resize", () => this.drawOnly());
+
+    this.run();
+  }
+
+  fmt(v) { return Number.isFinite(v) ? v.toPrecision(12) : "n/a"; }
+  fmtErr(v) { return Number.isFinite(v) ? v.toExponential(3) : "n/a"; }
+  fmtH(v) { return v.toPrecision(5); }
+
+  readInputs() {
+    const fn = FUNCTIONS[Number(this.$("fn").value)];
+    const a = parseFloat(this.$("a").value);
+    const b = parseFloat(this.$("b").value);
+    let n = parseInt(this.$("n").value, 10);
+    const tol = parseFloat(this.$("tol").value);
+
+    if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error("Enter numbers for both limits.");
+    if (!(a < b)) throw new Error("The lower limit a must be smaller than the upper limit b.");
+    if (!Number.isInteger(n) || n < 1) throw new Error("n must be a whole number of at least 1.");
+    if (n > 5_000_000) throw new Error("n is too large. Use 5,000,000 or fewer.");
+    if (!Number.isFinite(tol) || tol <= 0) throw new Error("The tolerance must be a positive number.");
+    if (fn.domain) {
+      for (let i = 0; i <= 50; i++) {
+        if (!fn.domain(a + ((b - a) * i) / 50)) {
+          throw new Error(`${fn.label} is not defined on the whole interval [${a}, ${b}].`);
+        }
+      }
+    }
+    for (let i = 0; i <= 50; i++) {
+      if (!Number.isFinite(fn.f(a + ((b - a) * i) / 50))) {
+        throw new Error("The function is not finite on this interval. Choose different limits.");
+      }
+    }
+    return { fn, a, b, n, tol };
+  }
+
+  run() {
+    const err = this.$("error");
+    try {
+      const { fn, a, b, n, tol } = this.readInputs();
+      err.style.display = "none";
+      this.state = { fn, a, b, n };
+
+      const exact = referenceValue(fn, a, b);
+      this.$("exact").innerHTML = `${fn.F ? "Exact value" : "Reference value (fine Simpson sum)"}: <strong>${this.fmt(exact)}</strong>`;
+
+      const nSimp = n % 2 ? n + 1 : n;
+      const t = Integrator.trapezoid(fn.f, a, b, n);
+      const s = Integrator.simpson(fn.f, a, b, nSimp);
+      this.$("fixed-body").innerHTML =
+        this.row("Trapezoidal", this.colors.trap, [this.fmt(t), this.fmtErr(Math.abs(t - exact)), n, this.fmtH((b - a) / n)]) +
+        this.row("Simpson", this.colors.simp, [this.fmt(s), this.fmtErr(Math.abs(s - exact)), nSimp, this.fmtH((b - a) / nSimp)]);
+
+      const at = Integrator.autoTrapezoid(fn.f, a, b, tol);
+      const as = Integrator.autoSimpson(fn.f, a, b, tol);
+      this.$("auto-body").innerHTML =
+        this.row("Trapezoidal", this.colors.trap, [this.fmt(at.value), this.fmtErr(Math.abs(at.value - exact)), this.fmtErr(at.estimate), at.n, this.fmtH(at.h)]) +
+        this.row("Simpson", this.colors.simp, [this.fmt(as.value), this.fmtErr(Math.abs(as.value - exact)), this.fmtErr(as.estimate), as.n, this.fmtH(as.h)]);
+
+      const notes = [];
+      if (!at.converged) notes.push("Trapezoidal rule did not reach the tolerance within 4,194,304 subintervals.");
+      if (!as.converged) notes.push("Simpson's rule did not reach the tolerance within 4,194,304 subintervals.");
+      if (!notes.length) {
+        notes.push(`For tolerance ${tol}, Simpson's rule needed ${as.n} subintervals and the trapezoidal rule needed ${at.n}.`);
+      }
+      if (n % 2) notes.push(`Simpson's fixed-n row used n = ${nSimp} because n must be even.`);
+      this.$("auto-note").textContent = notes.join(" ");
+
+      this.drawOnly();
+    } catch (e) {
+      err.textContent = e.message;
+      err.style.display = "block";
+    }
+  }
+
+  drawOnly() {
+    if (!this.state) return;
+    const { fn, a, b, n } = this.state;
+    const method = document.querySelector('input[name="view"]:checked').value;
+    this.plot.draw(fn, a, b, n, method, this.colors);
+  }
+
+  row(name, color, cells) {
+    const tds = cells.map((c) => `<td class="num">${c}</td>`).join("");
+    return `<tr><td><span class="swatch" style="background:${color}"></span>${name}</td>${tds}</tr>`;
+  }
+}
+
+new App();
+</script>
+</body>
+</html>
